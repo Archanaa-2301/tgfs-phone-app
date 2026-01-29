@@ -1,9 +1,11 @@
-console.log("✅ app.js running on phone");
+console.log("✅ app.js running");
 
 let model;
 let video = document.getElementById("camera");
 let canvas = document.getElementById("overlay");
 let ctx = canvas.getContext("2d");
+let lastFrame = null;
+let lastBox = null;
 let running = false;
 
 /* ---------- CAMERA ---------- */
@@ -25,38 +27,76 @@ async function loadModel() {
   console.log("✅ Model loaded");
 }
 
+/* ---------- LIGHT MOTION CHECK ---------- */
+function hasSceneChanged(current, threshold = 25) {
+  if (!lastFrame) {
+    lastFrame = current;
+    return true;
+  }
+
+  let diff = 0;
+  for (let i = 0; i < current.length; i += 40) {
+    diff += Math.abs(current[i] - lastFrame[i]);
+  }
+
+  lastFrame = current;
+  return diff > threshold * 100;
+}
+
 /* ---------- INFERENCE ---------- */
 async function runInference() {
   if (!model || video.readyState < 2) return;
 
-  const imgTensor = tf.tidy(() => {
-    return tf.browser.fromPixels(video)
-      .resizeNearestNeighbor([640, 640])
+  /* 🔹 Cheap frame check (VERY FAST) */
+  const tiny = tf.tidy(() =>
+    tf.browser.fromPixels(video)
+      .resizeNearestNeighbor([64, 64])
+      .mean(2)
       .toFloat()
-      .div(255.0)
-      .expandDims(0);
-  });
+  );
 
-  await model.executeAsync(imgTensor);
+  const frameData = await tiny.data();
+  tf.dispose(tiny);
 
-  // 🔥 CLEAR PREVIOUS DRAWINGS
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!hasSceneChanged(frameData)) {
+    drawLastBox();
+    return;
+  }
 
-  // 🟢 TEMP PROOF: GREEN BOX (REAL-TIME)
-  ctx.strokeStyle = "lime";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(60, 40, 180, 140);
+  /* 🔹 Heavy YOLO only when needed */
+  const input = tf.tidy(() =>
+    tf.browser.fromPixels(video)
+      .resizeNearestNeighbor([416, 416])
+      .toFloat()
+      .div(255)
+      .expandDims(0)
+  );
 
-  tf.dispose(imgTensor);
+  await model.executeAsync(input);
+  tf.dispose(input);
+
+  /* 🔹 TEMP: simulated detection result */
+  lastBox = { x: 70, y: 50, w: 160, h: 120 };
+  drawLastBox();
 }
 
-/* ---------- REAL-TIME LOOP ---------- */
+/* ---------- DRAW ---------- */
+function drawLastBox() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!lastBox) return;
+
+  ctx.strokeStyle = "lime";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(lastBox.x, lastBox.y, lastBox.w, lastBox.h);
+}
+
+/* ---------- REALTIME LOOP ---------- */
 function startRealtime() {
   if (running) return;
   running = true;
 
   async function loop() {
-    if (!running) return;
     await runInference();
     requestAnimationFrame(loop);
   }
@@ -68,7 +108,8 @@ function startRealtime() {
 async function init() {
   await setupCamera();
   await loadModel();
-  document.getElementById("status").innerText = "Status: running real-time inference";
+  document.getElementById("status").innerText =
+    "Status: real-time optimized inference";
   startRealtime();
 }
 
