@@ -8,9 +8,18 @@
 <body>
 
 <h2>📱 Phone TFJS Test</h2>
-<video id="camera" autoplay playsinline width="320"></video>
-<br>
-<button onclick="runInference()">▶ Run Inference</button>
+
+<div style="position: relative; width: 320px;">
+  <video id="camera" autoplay playsinline width="320"></video>
+  <canvas
+    id="overlay"
+    width="320"
+    height="240"
+    style="position:absolute; top:0; left:0;">
+  </canvas>
+</div>
+
+<p id="status">Status: loading...</p>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="./app.js"></script>
